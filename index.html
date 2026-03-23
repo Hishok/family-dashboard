@@ -134,6 +134,24 @@ h1,h2,h3,h4{font-family:var(--font);}
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-thumb{background:var(--s3);border-radius:99px;}
 input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.5);}
+
+/* PIN screen */
+.pin-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;padding:32px 24px;}
+.pin-logo{font-size:40px;margin-bottom:8px;}
+.pin-title{font-family:var(--font);font-size:22px;font-weight:700;margin-bottom:6px;text-align:center;}
+.pin-sub{font-size:13px;color:var(--muted);margin-bottom:40px;text-align:center;line-height:1.5;}
+.pin-dots{display:flex;gap:14px;margin-bottom:40px;}
+.pin-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);background:var(--s2);transition:all .15s;}
+.pin-dot.filled{background:var(--accent);border-color:var(--accent);}
+.pin-dot.error{background:var(--red);border-color:var(--red);}
+.pin-dot.success{background:var(--green);border-color:var(--green);}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:280px;}
+.pin-key{background:var(--s1);border:1px solid var(--border);border-radius:14px;height:64px;font-family:var(--font);font-size:22px;font-weight:600;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .1s,transform .1s;-webkit-tap-highlight-color:transparent;}
+.pin-key:active{background:var(--s3);transform:scale(.94);}
+.pin-key.accent{color:var(--accent);}
+.pin-key.del{font-size:18px;}
+.pin-error{font-size:13px;color:var(--red);margin-top:16px;text-align:center;min-height:20px;}
+.pin-change{font-size:12px;color:var(--muted);margin-top:24px;cursor:pointer;text-decoration:underline;background:none;border:none;font-family:var(--body);}
 </style>
 </head>
 <body>
@@ -1216,10 +1234,137 @@ function TagModal({event,onClose,events,setEvents}) {
   );
 }
 
+// ─── PIN Screen ───────────────────────────────────────────────────────────────
+
+const PIN_KEY     = "fd3-pin";
+const SESSION_KEY = "fd3-unlocked";
+
+function PinScreen({ onUnlock }) {
+  const stored = localStorage.getItem(PIN_KEY);
+  const isSetup = !stored;
+  const [stage, setStage]   = useState(isSetup ? "set" : "enter"); // set | confirm | enter
+  const [input, setInput]   = useState("");
+  const [first, setFirst]   = useState("");
+  const [dotState, setDotState] = useState("idle"); // idle | error | success
+  const PIN_LEN = 6;
+
+  const titles = {
+    set:     { title:"Create your PIN",    sub:"Choose a 6-digit PIN to protect\nyour family dashboard" },
+    confirm: { title:"Confirm your PIN",   sub:"Enter the same PIN again to confirm" },
+    enter:   { title:"Welcome back",       sub:"Enter your PIN to unlock" },
+  };
+
+  const flash = (state, cb) => {
+    setDotState(state);
+    setTimeout(() => { setDotState("idle"); setInput(""); if(cb) cb(); }, 600);
+  };
+
+  const handleDigit = (d) => {
+    if(dotState !== "idle") return;
+    const next = input + d;
+    setInput(next);
+    if(next.length < PIN_LEN) return;
+
+    if(stage === "set") {
+      flash("success", () => { setFirst(next); setStage("confirm"); });
+    } else if(stage === "confirm") {
+      if(next === first) {
+        flash("success", () => {
+          localStorage.setItem(PIN_KEY, next);
+          sessionStorage.setItem(SESSION_KEY, "1");
+          onUnlock();
+        });
+      } else {
+        flash("error", () => { setFirst(""); setStage("set"); });
+      }
+    } else {
+      if(next === stored) {
+        flash("success", () => { sessionStorage.setItem(SESSION_KEY, "1"); onUnlock(); });
+      } else {
+        flash("error");
+      }
+    }
+  };
+
+  const handleDel = () => {
+    if(dotState !== "idle") return;
+    setInput(i => i.slice(0,-1));
+  };
+
+  const resetPin = () => {
+    if(window.confirm("Reset PIN? You'll need to set a new one.")) {
+      localStorage.removeItem(PIN_KEY);
+      setStage("set"); setInput(""); setFirst(""); setDotState("idle");
+    }
+  };
+
+  const { title, sub } = titles[stage];
+
+  return (
+    <div className="pin-screen">
+      <div className="pin-logo">🏠</div>
+      <div className="pin-title">{title}</div>
+      <div className="pin-sub">{sub}</div>
+
+      <div className="pin-dots">
+        {Array.from({length: PIN_LEN}).map((_,i) => (
+          <div key={i} className={`pin-dot ${i < input.length ? dotState === "error" ? "error" : dotState === "success" ? "success" : "filled" : ""}`}/>
+        ))}
+      </div>
+
+      <div className="pin-pad">
+        {[1,2,3,4,5,6,7,8,9].map(n => (
+          <button key={n} className="pin-key" onClick={() => handleDigit(String(n))}>{n}</button>
+        ))}
+        <div/>
+        <button className="pin-key" onClick={() => handleDigit("0")}>0</button>
+        <button className="pin-key del" onClick={handleDel}>⌫</button>
+      </div>
+
+      <div className="pin-error">
+        {dotState === "error" && (stage === "confirm" ? "PINs don't match — try again" : "Wrong PIN")}
+      </div>
+
+      {stage === "enter" && (
+        <button className="pin-change" onClick={resetPin}>Forgot PIN?</button>
+      )}
+    </div>
+  );
+}
+
+// ─── Lock Button (shown in app) ───────────────────────────────────────────────
+
+function LockButton({ onLock }) {
+  return (
+    <button onClick={onLock} style={{
+      position:"fixed",top:16,right:16,zIndex:80,
+      background:"var(--s2)",border:"1px solid var(--border)",
+      color:"var(--muted)",borderRadius:99,padding:"6px 12px",
+      fontSize:12,cursor:"pointer",fontFamily:"var(--body)",display:"flex",
+      alignItems:"center",gap:5
+    }}>🔒 Lock</button>
+  );
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
+function Root() {
+  const [unlocked, setUnlocked] = useState(
+    !!sessionStorage.getItem(SESSION_KEY)
+  );
+  const lock = () => { sessionStorage.removeItem(SESSION_KEY); setUnlocked(false); };
+
+  if (!unlocked) return <PinScreen onUnlock={() => setUnlocked(true)} />;
+  return (
+    <>
+      <LockButton onLock={lock} />
+      <App />
+    </>
+  );
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App/>);
+root.render(<Root/>);
 </script>
 </body>
 </html>
