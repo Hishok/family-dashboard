@@ -160,11 +160,10 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.5);}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.js"></script>
+
 
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
-const { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell, PieChart, Pie } = Recharts;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -522,6 +521,36 @@ function HomeTab({netWorth,income,expense,equity,mortgage,debtTotal,savingsTotal
   );
 }
 
+// ─── CSS Bar Chart (no dependencies) ─────────────────────────────────────────
+
+function CssBarChart({ data }) {
+  const [tip, setTip] = useState(null);
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data.map(d => d.total));
+  return (
+    <div style={{position:"relative",marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"flex-end",gap:6,height:120,padding:"0 4px"}}>
+        {data.slice(0,8).map((c,i) => {
+          const pct = max > 0 ? (c.total / max) * 100 : 0;
+          return (
+            <div key={c.name} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",height:"100%",justifyContent:"flex-end",gap:4}}
+              onMouseEnter={()=>setTip(i)} onMouseLeave={()=>setTip(null)}
+              onClick={()=>setTip(tip===i?null:i)}>
+              {tip===i && (
+                <div style={{position:"absolute",top:0,background:"#0d1219",border:"1px solid #1e2c40",borderRadius:8,padding:"5px 10px",fontSize:12,color:"#dce8f8",whiteSpace:"nowrap",zIndex:10,pointerEvents:"none"}}>
+                  {c.icon} {c.name}: {fmt(c.total)}
+                </div>
+              )}
+              <div style={{width:"100%",background:c.color,borderRadius:"4px 4px 0 0",height:`${Math.max(4,pct)}%`,transition:"height .4s",opacity:tip!==null&&tip!==i?.5:1}}/>
+              <div style={{fontSize:9,color:"#4d6080",textAlign:"center",letterSpacing:"-.3px",lineHeight:1.2}}>{c.name.slice(0,5)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Money Tab ────────────────────────────────────────────────────────────────
 
 function MoneyTab({tx,setTx,monthTx,income,expense,month,setMonth,year,setYear,budgets,setModal}) {
@@ -529,8 +558,6 @@ function MoneyTab({tx,setTx,monthTx,income,expense,month,setMonth,year,setYear,b
   const catSpend=CATS.filter(c=>c.name!=="Income"&&c.name!=="Savings").map(c=>({...c,total:monthTx.filter(t=>t.cat===c.name&&t.type==="expense").reduce((s,t)=>s+t.amount,0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
   const expenses=monthTx.filter(t=>t.type==="expense").sort((a,b)=>new Date(b.date)-new Date(a.date));
   const incomes=monthTx.filter(t=>t.type==="income");
-  const barData=catSpend.slice(0,7).map(c=>({name:c.name.slice(0,5),amt:c.total,fill:c.color}));
-
   return (
     <div>
       <div className="page-title">Money</div>
@@ -551,14 +578,7 @@ function MoneyTab({tx,setTx,monthTx,income,expense,month,setMonth,year,setYear,b
             <div className="section-label" style={{marginBottom:0}}>Category Breakdown</div>
             <button onClick={()=>setModal("budget")} style={{fontSize:11,color:"var(--accent)",background:"none",border:"none",cursor:"pointer"}}>Set budgets</button>
           </div>
-          <ResponsiveContainer width="100%" height={150}>
-            <BarChart data={barData} barCategoryGap="30%">
-              <XAxis dataKey="name" tick={{fill:"#4d6080",fontSize:10}} axisLine={false} tickLine={false}/>
-              <YAxis hide/>
-              <Tooltip formatter={v=>fmt(v)} contentStyle={{background:"#0d1219",border:"1px solid #1e2c40",borderRadius:8,color:"#dce8f8",fontSize:12}}/>
-              <Bar dataKey="amt" radius={[4,4,0,0]}>{barData.map((b,i)=><Cell key={i} fill={b.fill}/>)}</Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <CssBarChart data={catSpend} />
           {catSpend.map(c=>{
             const bud=budgets?.[c.name];
             const pct=bud?Math.min(100,(c.total/bud)*100):null;
